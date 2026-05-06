@@ -128,7 +128,7 @@ python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
 
 Useful flags:
 - `--aggregate-by-seed`: average each seed first, then compute mean/std across seeds.
-- `--prefer-blocks-file`: for folders whose name contains `blocks`, use `green_vs_quickvina_blocks.csv` instead of `green_vs_quickvina.csv`; the default plot filename gets `_blocks` appended if `--output` is not explicitly set.
+- `--prefer-blocks-file`: for folders whose name contains `blocks`, use `green_vs_quickvina_blocks.csv` instead of `green_vs_quickvina.csv`; the default plot filename gets `_blocks` appended if `--output` is not explicitly set. In this mode, `resume.csv` is recomputed from the same selected comparison rows as the plot, so its statistics are molecule-pooled by default and match the LaTeX table definition.
 
 Default inputs used by this script:
 - root: `/work/liac/tatzber/green_vs_docking/outputs/outputs_bae`

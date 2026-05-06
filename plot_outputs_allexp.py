@@ -27,6 +27,15 @@ RESUME_COLUMNS = [
     "block_usage_pct"
 ]
 
+POOLED_RESUME_METRICS = [
+    "green_score",
+    "atom_economy",
+    "solvent_score",
+    "temperature_score",
+    "num_steps",
+    "biomass_utilization",
+]
+
 def _clean_label(raw: str) -> str:
     """ Cleans an experiment label by splitting on colons and taking the last non-empty segment, or returning the original string if it cannot be processed. This is useful for normalizing labels that may contain hierarchical information separated by colons. """
     if not isinstance(raw, str):
@@ -238,6 +247,89 @@ def build_resume_table(root: Path, resume_path: Path) -> Path | None:
     return resume_path
 
 
+def _summarize_comparison_rows(
+    df: pd.DataFrame,
+    label: str,
+    aggregate_by_seed: bool,
+) -> dict[str, object]:
+    if aggregate_by_seed and "seed" in df.columns:
+        seed_metric_means = df.groupby("seed")[POOLED_RESUME_METRICS].mean()
+        summary: dict[str, object] = {
+            "label": label,
+            "type": "average across seed means",
+            "num_molecules": df.groupby("seed").size().mean(),
+        }
+        for metric in POOLED_RESUME_METRICS:
+            summary[metric] = seed_metric_means[metric].mean()
+            summary[f"{metric}_std"] = seed_metric_means[metric].std()
+        if "uses_block" in df.columns:
+            summary["block_usage_pct"] = df.groupby("seed")["uses_block"].mean().mean() * 100
+        else:
+            summary["block_usage_pct"] = pd.NA
+        return summary
+
+    summary = {
+        "label": label,
+        "type": "pooled molecule average",
+        "num_molecules": len(df),
+    }
+    for metric in POOLED_RESUME_METRICS:
+        summary[metric] = df[metric].mean()
+        summary[f"{metric}_std"] = df[metric].std()
+    if "uses_block" in df.columns:
+        summary["block_usage_pct"] = df["uses_block"].mean() * 100
+    else:
+        summary["block_usage_pct"] = pd.NA
+    return summary
+
+
+def build_resume_table_from_comparisons(
+    root: Path,
+    resume_path: Path,
+    prefer_block_file: bool,
+    aggregate_by_seed: bool,
+) -> Path | None:
+    """
+    Build a resume CSV from the same comparison files used for plotting.
+
+    This mode keeps the resume statistics consistent with `plot_points`: block
+    folders can use `green_vs_quickvina_blocks.csv`, and the standard deviation
+    is either molecule-pooled or seed-first depending on `aggregate_by_seed`.
+    """
+    rows: list[dict[str, object]] = []
+    baseline_seen = False
+    required_columns = {"label", *POOLED_RESUME_METRICS}
+
+    for experiment_dir in sorted(root.iterdir()):
+        if not experiment_dir.is_dir():
+            continue
+        comparison_path = _comparison_csv_for_experiment(experiment_dir, prefer_block_file)
+        if comparison_path is None:
+            continue
+        comparison_df = pd.read_csv(comparison_path)
+        if comparison_df.empty or not required_columns.issubset(comparison_df.columns):
+            continue
+
+        comparison_df = comparison_df.copy()
+        comparison_df["normalized_label"] = comparison_df["label"].map(_clean_label)
+        for label, label_df in comparison_df.groupby("normalized_label", sort=False):
+            label = _clean_label(label)
+            if label.lower() == "baseline":
+                if baseline_seen:
+                    continue
+                baseline_seen = True
+            rows.append(_summarize_comparison_rows(label_df, label, aggregate_by_seed))
+
+    if not rows:
+        return None
+
+    resume_df = pd.DataFrame(rows)
+    final_columns = ["label", "type", *RESUME_COLUMNS]
+    resume_df = resume_df.reindex(columns=final_columns)
+    resume_df.to_csv(resume_path, index=False)
+    return resume_path
+
+
 def main() -> None:
     """Parse CLI options, create the aggregate plot, and write `resume.csv`."""
     parser = argparse.ArgumentParser(description="Plot mean green score vs docking for outputs.")
@@ -287,7 +379,15 @@ def main() -> None:
     plot_points(df, plot_path)
     print(f"Wrote summary plot to: {plot_path}")
 
-    resume_file = build_resume_table(root_dir, resume_path)
+    if args.prefer_blocks_file:
+        resume_file = build_resume_table_from_comparisons(
+            root=root_dir,
+            resume_path=resume_path,
+            prefer_block_file=args.prefer_blocks_file,
+            aggregate_by_seed=args.aggregate_by_seed,
+        )
+    else:
+        resume_file = build_resume_table(root_dir, resume_path)
     if resume_file is not None:
         print(f"Wrote resume table to: {resume_file}")
 
