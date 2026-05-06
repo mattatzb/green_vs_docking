@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+slurm-*.out
+outputs/
+outputs_old_ae/
+*.png
+submit*.sh
+!submit_latex_table_summary.sh
+!submit.sh

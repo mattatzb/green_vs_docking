@@ -1,0 +1,11 @@
+name: green-vs-docking
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pandas
+  - numpy
+  - matplotlib-base
+  - seaborn
+  - rdkit
+  - pip
