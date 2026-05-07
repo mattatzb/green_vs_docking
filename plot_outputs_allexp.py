@@ -8,7 +8,19 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter
+import numpy as np
 import pandas as pd
+
+# Use plasma palette for all plots by default.
+_PLASMA = plt.cm.get_cmap("plasma")
+plt.rcParams["image.cmap"] = "plasma"
+plt.rcParams["axes.prop_cycle"] = plt.cycler(
+    color=_PLASMA(np.linspace(0.1, 0.9, 10))
+)
+plt.rcParams["xtick.labelsize"] = 18
+plt.rcParams["ytick.labelsize"] = 18
 
 RESUME_COLUMNS = [
     "num_molecules",
@@ -149,6 +161,61 @@ def load_experiment_points(root: Path, aggregate_by_seed: bool, prefer_block_fil
     return pd.DataFrame(rows)
 
 
+def load_experiment_rows(root: Path, prefer_block_file: bool) -> pd.DataFrame:
+    """
+    Load molecule-level rows from the same comparison CSVs used by the plots.
+
+    Baseline is present in every experiment folder, so it is kept only once to
+    avoid giving it repeated weight in the combined KDE.
+    """
+    rows: list[pd.DataFrame] = []
+    baseline_seen = False
+    required_columns = {"label", "green_score", "quickvina2_gpu_raw_values"}
+
+    for experiment_dir in sorted(root.iterdir()):
+        if not experiment_dir.is_dir():
+            continue
+        comparison_path = _comparison_csv_for_experiment(experiment_dir, prefer_block_file)
+        if comparison_path is None:
+            continue
+
+        comparison_df = pd.read_csv(comparison_path)
+        if comparison_df.empty or not required_columns.issubset(comparison_df.columns):
+            continue
+
+        comparison_df = comparison_df.copy()
+        comparison_df["normalized_label"] = comparison_df["label"].map(_clean_label)
+        for label, label_df in comparison_df.groupby("normalized_label", sort=False):
+            label = _clean_label(label)
+            if label.lower() == "baseline":
+                if baseline_seen:
+                    continue
+                baseline_seen = True
+
+            selected = label_df.copy()
+            selected["label"] = label
+            selected["experiment_dir"] = experiment_dir.name
+            rows.append(selected)
+
+    if not rows:
+        return pd.DataFrame(columns=["label", "green_score", "quickvina2_gpu_raw_values"])
+    return pd.concat(rows, ignore_index=True)
+
+
+def sample_rows_by_label(df: pd.DataFrame, max_rows_per_label: int | None) -> pd.DataFrame:
+    """Optionally down-sample each experiment label to speed up KDE rendering."""
+    if max_rows_per_label is None or max_rows_per_label <= 0 or df.empty:
+        return df
+
+    sampled: list[pd.DataFrame] = []
+    for _, label_df in df.groupby("label", sort=False):
+        if len(label_df) > max_rows_per_label:
+            sampled.append(label_df.sample(n=max_rows_per_label, random_state=0))
+        else:
+            sampled.append(label_df)
+    return pd.concat(sampled, ignore_index=True)
+
+
 def plot_points(df: pd.DataFrame, output_path: Path) -> None:
     """Save a scatter/error-bar plot of mean green score versus docking."""
     if df.empty:
@@ -188,6 +255,114 @@ def plot_points(df: pd.DataFrame, output_path: Path) -> None:
     fig.tight_layout()
     fig.savefig(output_path, dpi=300)
     plt.close(fig)
+
+
+def plot_joint_kde(
+    df: pd.DataFrame,
+    output_path: Path,
+    docking_min: float = -14.0,
+    docking_max: float = 0.0,
+) -> None:
+    """Save one joint KDE overlay containing all experiment molecule clouds."""
+    try:
+        import seaborn as sns
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "The joint KDE plot requires seaborn in the active Python environment."
+        ) from exc
+
+    required_columns = {"label", "green_score", "quickvina2_gpu_raw_values"}
+    if df.empty or not required_columns.issubset(df.columns):
+        raise RuntimeError("No molecule-level comparison data found for the joint KDE plot.")
+
+    plot_df = df.dropna(subset=["label", "green_score", "quickvina2_gpu_raw_values"]).copy()
+    if plot_df.empty:
+        raise RuntimeError("All molecule-level rows have missing green or docking values.")
+
+    # Negating the docking score preserves the desired visual convention:
+    # more negative docking values appear on the right, while tick labels show
+    # the original docking score.
+    plot_df["_quickvina_inverted"] = -plot_df["quickvina2_gpu_raw_values"]
+    labels = list(dict.fromkeys(plot_df["label"].astype(str)))
+    colors = sns.color_palette("plasma", n_colors=len(labels))
+
+    grid = sns.JointGrid(
+        data=plot_df,
+        x="_quickvina_inverted",
+        y="green_score",
+        height=8,
+        ratio=5,
+        space=0.08,
+    )
+
+    legend_handles: list[Line2D] = []
+    for label, color in zip(labels, colors):
+        label_df = plot_df.loc[plot_df["label"] == label]
+        if len(label_df) < 2:
+            continue
+
+        sns.kdeplot(
+            data=label_df,
+            x="_quickvina_inverted",
+            y="green_score",
+            ax=grid.ax_joint,
+            levels=8,
+            thresh=0.05,
+            fill=False,
+            linewidths=0.8,
+            color=color,
+            warn_singular=False,
+        )
+        sns.kdeplot(
+            data=label_df,
+            x="_quickvina_inverted",
+            ax=grid.ax_marg_x,
+            color=color,
+            linewidth=1.0,
+            fill=False,
+            warn_singular=False,
+        )
+        sns.kdeplot(
+            data=label_df,
+            y="green_score",
+            ax=grid.ax_marg_y,
+            color=color,
+            linewidth=1.0,
+            fill=False,
+            warn_singular=False,
+        )
+        legend_handles.append(Line2D([0], [0], color=color, lw=1.5, label=label))
+
+    if not legend_handles:
+        raise RuntimeError("Not enough rows per experiment to draw a joint KDE plot.")
+
+    x_min = min(docking_min, docking_max)
+    x_max = max(docking_min, docking_max)
+    grid.ax_joint.set_xlim(-x_max, -x_min)
+    grid.ax_joint.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{-value:g}"))
+    grid.ax_marg_x.set_xlim(grid.ax_joint.get_xlim())
+
+    y_min = plot_df["green_score"].min()
+    y_max = plot_df["green_score"].max()
+    y_pad = max((y_max - y_min) * 0.05, 0.02)
+    grid.ax_joint.set_ylim(max(0.0, y_min - y_pad), min(1.0, y_max + y_pad))
+    grid.ax_marg_y.set_ylim(grid.ax_joint.get_ylim())
+
+    grid.ax_joint.set_xlabel("QuickVina2 GPU Raw Value")
+    grid.ax_joint.set_ylabel("Green Score")
+    grid.ax_joint.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
+    grid.ax_joint.legend(
+        handles=legend_handles,
+        fontsize=7,
+        loc="lower left",
+        frameon=True,
+        title="Experiment",
+    )
+    grid.figure.suptitle("Green Score vs Docking KDE Across Experiments", y=1.02)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    grid.figure.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(grid.figure)
 
 
 def build_resume_table(root: Path, resume_path: Path) -> Path | None:
@@ -357,9 +532,38 @@ def main() -> None:
         help="Average docking/green per seed first, then aggregate across seeds (std reflects variability between seeds).",
     )
     parser.add_argument(
-    "--prefer-blocks-file",
-    action="store_true",
-    help="For experiments whose folder names contain 'blocks', load green_vs_quickvina_blocks.csv instead of the default comparison file.",
+        "--prefer-blocks-file",
+        action="store_true",
+        help="For experiments whose folder names contain 'blocks', load green_vs_quickvina_blocks.csv instead of the default comparison file.",
+    )
+    parser.add_argument(
+        "--joint-kde-output",
+        type=Path,
+        default=None,
+        help="Optional PNG path for one joint KDE overlay containing all experiment molecule clouds.",
+    )
+    parser.add_argument(
+        "--joint-kde-sample",
+        type=int,
+        default=None,
+        help="Optional maximum number of molecules sampled per experiment label for faster KDE rendering.",
+    )
+    parser.add_argument(
+        "--joint-kde-only",
+        action="store_true",
+        help="Only create the joint KDE plot; skip the average scatter plot and resume CSV.",
+    )
+    parser.add_argument(
+        "--joint-kde-docking-min",
+        type=float,
+        default=-14.0,
+        help="Minimum docking value shown on the joint KDE x-axis.",
+    )
+    parser.add_argument(
+        "--joint-kde-docking-max",
+        type=float,
+        default=0.0,
+        help="Maximum docking value shown on the joint KDE x-axis.",
     )
     args = parser.parse_args()
 
@@ -374,6 +578,25 @@ def main() -> None:
         resume_path = root_dir / "resume.csv"
     else:
         resume_path = resume_path.expanduser().resolve()
+
+    if args.joint_kde_output is not None or args.joint_kde_only:
+        if args.joint_kde_output is None:
+            suffix = "_blocks" if args.prefer_blocks_file else ""
+            joint_kde_path = root_dir / f"green_vs_docking_joint_kde{suffix}.png"
+        else:
+            joint_kde_path = args.joint_kde_output.expanduser().resolve()
+        molecule_rows = load_experiment_rows(root_dir, prefer_block_file=args.prefer_blocks_file)
+        molecule_rows = sample_rows_by_label(molecule_rows, args.joint_kde_sample)
+        plot_joint_kde(
+            molecule_rows,
+            joint_kde_path,
+            docking_min=args.joint_kde_docking_min,
+            docking_max=args.joint_kde_docking_max,
+        )
+        print(f"Wrote joint KDE plot to: {joint_kde_path}")
+
+    if args.joint_kde_only:
+        return
 
     df = load_experiment_points(root_dir, aggregate_by_seed=args.aggregate_by_seed, prefer_block_file=args.prefer_blocks_file)
     plot_points(df, plot_path)
