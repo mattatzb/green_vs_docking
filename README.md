@@ -126,9 +126,33 @@ python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
   --aggregate-by-seed
 ```
 
+To also generate a molecule-level joint KDE overlay of all experiments on one figure:
+
+```bash
+python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
+  --root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
+  --prefer-blocks-file \
+  --joint-kde-output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_joint_kde.png
+```
+
+For a faster test run that only builds the KDE and samples each experiment:
+
+```bash
+python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
+  --root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
+  --prefer-blocks-file \
+  --joint-kde-only \
+  --joint-kde-sample 5000 \
+  --joint-kde-output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_joint_kde_test.png
+```
+
 Useful flags:
 - `--aggregate-by-seed`: average each seed first, then compute mean/std across seeds.
 - `--prefer-blocks-file`: for folders whose name contains `blocks`, use `green_vs_quickvina_blocks.csv` instead of `green_vs_quickvina.csv`; the default plot filename gets `_blocks` appended if `--output` is not explicitly set. In this mode, `resume.csv` is recomputed from the same selected comparison rows as the plot, so its statistics are molecule-pooled by default and match the LaTeX table definition.
+- `--joint-kde-output`: write an additional joint KDE plot that overlays all experiment molecule clouds on one figure using the Plasma palette.
+- `--joint-kde-only`: skip the average scatter plot and `resume.csv`, and only create the joint KDE plot.
+- `--joint-kde-sample`: randomly sample up to `N` molecules per experiment label before KDE estimation; useful for quick tests and large output folders.
+- `--joint-kde-docking-min` / `--joint-kde-docking-max`: control the docking range shown on the joint KDE x-axis. Defaults are `-14` and `0`.
 
 Default inputs used by this script:
 - root: `/work/liac/tatzber/green_vs_docking/outputs/outputs_bae`
@@ -137,7 +161,13 @@ Default inputs used by this script:
 
 Outputs:
 - summary scatter plot with docking axis inverted.
+- optional joint KDE plot with docking axis inverted and all experiments overlaid on one figure.
 - `resume.csv` containing experiment-average metrics from all discovered summary files.
+
+Notes:
+- The joint KDE uses molecule-level rows, not the per-experiment averages used by the summary scatter plot.
+- With `--prefer-blocks-file`, folders whose name contains `blocks` use `green_vs_quickvina_blocks.csv` for both the summary plot/resume recomputation and the joint KDE.
+- The joint KDE requires `seaborn` in the active environment; the rest of the script does not.
 
 ## Build LaTeX-Table Summary CSV
 
