@@ -224,32 +224,39 @@ def plot_points(df: pd.DataFrame, output_path: Path) -> None:
     df["green_score_std"] = df["green_score_std"].fillna(0.0)
     df["docking_std"] = df["docking_std"].fillna(0.0).abs()
 
+    markers = ["o", "s", "^", "D", "v", "P", "X", "*"]
+    labels = list(dict.fromkeys(df["label"].astype(str)))
+    label_to_marker = {
+        label: markers[i % len(markers)] for i, label in enumerate(labels)
+    }
+
     fig, ax = plt.subplots(figsize=(9, 6))
-    handles = []
-    labels = []
+    plotted_labels: set[str] = set()
 
     for _, row in df.iterrows():
-        is_baseline = row["label"].lower() == "baseline"
-        marker = "s" if is_baseline else "o"
         label = row["label"]
-        container = ax.errorbar(
+        marker = label_to_marker[label]
+        label_text = label if label not in plotted_labels else None
+        ax.errorbar(
             row["docking_mean"],
             row["green_score_mean"],
             xerr=row["docking_std"],
             yerr=row["green_score_std"],
             fmt=marker,
+            markersize=8,
             capsize=4,
-            label=label,
+            elinewidth=1.0,
+            markeredgewidth=1.0,
+            label=label_text,
         )
-        handles.append(container)
-        labels.append(label)
+        plotted_labels.add(label)
 
-    ax.set_xlabel("QuickVina2 GPU Reward (mean ± std)")
-    ax.set_ylabel("Green Score (mean ± std)")
-    ax.set_title("Average Green Score vs Docking")
+    ax.set_xlabel("Docking score")
+    ax.set_ylabel("Green chemistry score")
+    ax.set_title("Green chemistry-constrained experiments")
     ax.invert_xaxis()
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    ax.legend(handles, labels, fontsize=8, loc="best", frameon=True)
+    ax.legend(fontsize=8, loc="best", frameon=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -348,8 +355,8 @@ def plot_joint_kde(
     grid.ax_joint.set_ylim(max(0.0, y_min - y_pad), min(1.0, y_max + y_pad))
     grid.ax_marg_y.set_ylim(grid.ax_joint.get_ylim())
 
-    grid.ax_joint.set_xlabel("QuickVina2 GPU Raw Value")
-    grid.ax_joint.set_ylabel("Green Score")
+    grid.ax_joint.set_xlabel("Docking score")
+    grid.ax_joint.set_ylabel("Green chemistry score")
     grid.ax_joint.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
     grid.ax_joint.legend(
         handles=legend_handles,
@@ -511,14 +518,14 @@ def main() -> None:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path("/work/liac/tatzber/green_vs_docking/outputs/outputs_bae"),
+        default=Path("/work/liac/tatzber/green_vs_docking/outputs/9KQ3"),
         help="Directory that contains experiment subfolders.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("/work/liac/tatzber/green_vs_docking/outputs/outputs_bae/green_vs_docking_summary.png"),
-        help="Path of the PNG file to create.",
+        default=Path("/work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_summary.pdf"),
+        help="Path of the PDF file to create.",
     )
     parser.add_argument(
         "--resume-output",
