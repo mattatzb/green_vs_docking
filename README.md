@@ -1,197 +1,153 @@
-# Green vs Docking Analysis
+# Green chemistry vs docking analysis
 
-`green_vs_docking` scores retrosynthetic routes with green-chemistry metrics, merges the scores with docking rewards, and produces summary tables/plots for condition-optimization experiments.
+Reproduce the manuscript's green-chemistry scores, summary tables, and figure
+from the archived pesticide experiments. Run the commands below from the
+repository root.
 
-## Package Layout
+## 1. Install the environment
 
-Core scoring:
-- `run_green_analysis.py`: executable wrapper for the main analysis CLI.
-- `main.py`: CLI parsing and output writing for one comparison run.
-- `analyzer.py`: loops over experiment folders and seeds.
-- `scoring.py`: per-route component scores, green score aggregation, block/protection flags, and summary statistics.
-- `atom_economy.py`: route-level atom economy.
-- `solvent_score.py`: solvent/agent scoring from `data/solvent_guide.json`.
-- `temperature.py`: temperature-range scoring.
-- `biomass_utilization.py`: biomass utilisation efficiency (BUE) from block reagents using NameRxn atom mapping.
-- `plots.py`: molecule-level green-score/docking merge and KDE plots.
-
-Post-processing:
-- `plot_outputs_allexp.py`: aggregate all experiment output folders into one green-vs-docking plot and `resume.csv`.
-- `table_summary.py`: reusable logic for the 9KQ3 LaTeX-table summary CSV.
-- `build_latex_table_summary.py`: executable wrapper for `table_summary.py`.
-
-Data/configuration:
-- `data/blocks.smi`: biomass/block SMILES used for block detection and BUE.
-- `data/solvent_guide.json`: solvent/reagent score lookup.
-- `environment.yml`: conda environment definition.
-
-## Environment
+Verified on **Ubuntu 22.04.4 LTS, Linux x86-64**. Analysis dependencies,
+including NumPy 1.26.4 and RDKit 2025.3.5, are pinned in `environment.yml`.
 
 ```bash
-conda env create -f /work/liac/tatzber/green_vs_docking/environment.yml
+conda env create --file environment.yml
 conda activate green-vs-docking
 ```
 
-## Green Score Definition
+Analysis uses saved routes, reaction conditions, and docking scores; it requires
+no GPU, model checkpoints, or new docking/retrosynthesis searches.
+NameRxn is a separate dependency for route rescoring (step 3).
 
-For each solved route, the package computes:
-- `atom_economy`: route-level heavy-atom mass balance.
-- `solvent_score`: minimum solvent/agent score across route steps, using `data/solvent_guide.json` and a default fallback score.
-- `temperature_score`: mean score of available reaction-temperature ranges; missing temperatures are ignored.
-- `biomass_utilization`: fraction of input biomass block mass that reaches the final product. Routes with no detected block reagent receive `0.0`.
+## 2. Download the archived inputs
 
-The default green score is an equal-weight average:
+Download **`green_vs_docking_data.zip`** from
+**[Zenodo: 10.5281/zenodo.23673270](https://doi.org/10.5281/zenodo.23673270)**
+and extract it into the repository root:
 
-```text
-green_score = 0.25 atom_economy + 0.25 solvent_score + 0.25 temperature_score + 0.25 biomass_utilization
+```bash
+unzip ~/Downloads/green_vs_docking_data.zip -d .
 ```
 
-`NaN` components are skipped and the remaining weights are renormalized. Since non-block routes explicitly get `biomass_utilization = 0.0`, the BUE term is included and penalizes routes that do not use blocks.
-
-## Input Contracts
-
-### Experiment Folder
-
-Each experiment path passed to `--experiment` must contain seed folders named `seed0`, `seed1`, etc. Each seed folder must contain:
+The archive contains eight `data/pesticide_9KQ3_*` experiment directories,
+including the `pesticide_9KQ3_basic` baseline. Seed inputs follow this layout:
 
 ```text
-seedX/
+data/pesticide_9KQ3_*/seed0/      # likewise seed1 through seed4
   oracle_history.csv
-  syntheseus_results/
-    smiles_rxn_tracker.json
+  syntheseus_results/smiles_rxn_tracker.json
 ```
 
-### `oracle_history.csv`
+`data/blocks.smi`, `data/solvent_guide.json`, and the reference results in
+`9KQ3_outputs/` are supplied in this repository, separately from the ZIP.
+The two known missing oracle histories are described below.
 
-Required for green/docking analysis:
-- `smiles`
-- `syntheseus_reward`
-- `quickvina2_gpu_raw_values`
+## 3. Configure NameRxn for route rescoring
 
-A molecule is considered solved by the retrosynthesis model when `syntheseus_reward != 0`.
-
-### `smiles_rxn_tracker.json`
-
-The tracker is expected to map target SMILES to route dictionaries. Route dictionaries should contain `node_*` entries with:
-- molecule nodes: `is_mol`, `mol_smiles`, `depth`
-- reaction nodes: `is_rxn`, `rxn_smiles`, `depth`, and optionally `agents`, `temperature`, `rxn_class`, `rxn_name`
-
-`rxn_class` and `rxn_name` are used to flag protection/deprotection routes when either field contains the substring `protection`.
-
-### Block and Biomass Inputs
-
-`data/blocks.smi` contains the enforced biomass blocks. Lines can contain one SMILES or comma-separated SMILES. These are canonicalized before matching. BUE requires a NameRxn binary, by default:
-
-```text
-/work/liac/tatzber/HazELNut/namerxn
-```
-
-## Run Green Analysis
-
-Example:
+Full route rescoring requires licensed
+[NameRxn from NextMove Software](https://www.nextmovesoftware.com/namerxn.html)
+for atom mapping. The manuscript used **version 3.7.3**, from
+`NameRxn-3.7.3-CentOS-7.8.3-gcc-4.8.5.tar.gz`.
+After obtaining and extracting it, configure the executable and check its checksum:
 
 ```bash
-python /work/liac/tatzber/green_vs_docking/run_green_analysis.py \
-  --experiment baseline=/scratch/sabanza/tango/experiments/conditions/pesticide_basic \
-  --experiment pesticide_blocks=/scratch/sabanza/tango/experiments/conditions/pesticide_blocks \
-  --output-dir /work/liac/tatzber/green_vs_docking/outputs/pesticide_blocks
+export NAMERXN_BINARY="/absolute/path/to/HazELNut/namerxn"
+sha256sum "$NAMERXN_BINARY"
 ```
 
-Optional inputs:
+Reference executable SHA-256:
+`cd0bc654ab67e633f5537bcacd53eeeb1e302e41a91f771bcf5cc40bd633c43e`.
+The saved-comparison workflow below does not require NameRxn.
+
+## 4. Reproduce the full analysis
 
 ```bash
---solvent-guide /path/to/solvent_guide.json
---block-file /path/to/blocks.smi
---namerxn-binary /path/to/namerxn
+python main.py
 ```
 
-Outputs written to `--output-dir`:
-- `molecule_scores.csv`: one row per scored molecule with component scores, `green_score`, `uses_block`, and `has_protection`.
-- `summary_scores.csv`: per-seed rows plus experiment-average rows with mean and standard deviation for each metric.
-- `summary_scores_blocks_only.csv`: written when a condition label contains `blocks`; baseline rows are kept unchanged and condition rows are restricted to molecules with `uses_block == True`.
-- `green_vs_quickvina.csv`: molecule-level merge of green score and docking value.
-- `green_vs_quickvina_kde.png`: KDE plot with docking axis inverted so more negative docking values are on the right.
-- `green_vs_quickvina_blocks.csv` / `green_vs_quickvina_blocks_kde.png`: same merge/plot but block-condition rows require `uses_block == True`; baseline remains unchanged.
-- `green_vs_quickvina_no_protection.csv` / `green_vs_quickvina_no_protection_kde.png`: same merge/plot but condition rows require `has_protection == False`; baseline remains unchanged.
+This scores the saved routes for all seven conditions against the baseline,
+writes per-condition molecule scores, comparison CSVs, summaries, and KDE plots,
+then generates these three manuscript artifacts:
 
-## Aggregate Existing Experiment Outputs
+| Generated file | Supplied reference |
+| --- | --- |
+| `outputs/9KQ3/latex_table_summary.csv` | `9KQ3_outputs/latex_table_summary.csv` |
+| `outputs/9KQ3/resume.csv` | `9KQ3_outputs/resume.csv` |
+| `outputs/9KQ3/green_vs_docking_summary_blocks.pdf` | `9KQ3_outputs/green_vs_docking_summary_blocks.pdf` |
 
-Use `plot_outputs_allexp.py` when each experiment already has a `green_vs_quickvina.csv` and `summary_scores.csv` output folder.
+`python main.py run --output-dir /path/to/fresh-results` selects another
+destination. NameRxn can also be selected with `--namerxn-binary`; otherwise
+`NAMERXN_BINARY` takes precedence over `namerxn` on `PATH`.
+Route scoring and KDE rendering can be slow on the full dataset.
+
+## 5. Check reproduction
+
+Run the small unit and regression tests:
 
 ```bash
-python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
-  --root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
-  --output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_summary.png \
-  --resume-output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/resume.csv \
-  --aggregate-by-seed
+python -B -m pytest
 ```
 
-To also generate a molecule-level joint KDE overlay of all experiments on one figure:
+These use synthetic fixtures and require neither the Zenodo download nor
+NameRxn. They check scoring, statistics options, paths, and pipeline orchestration;
+they do not rerun the full manuscript dataset.
+
+After generating the final artifacts, compare both CSVs numerically:
 
 ```bash
-python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
-  --root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
-  --prefer-blocks-file \
-  --joint-kde-output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_joint_kde.png
+python - <<'PY'
+from pathlib import Path
+import pandas as pd
+
+for name in ("latex_table_summary.csv", "resume.csv"):
+    pd.testing.assert_frame_equal(
+        pd.read_csv(Path("outputs/9KQ3") / name),
+        pd.read_csv(Path("9KQ3_outputs") / name),
+        check_dtype=False, rtol=1e-10, atol=1e-10,
+    )
+    print(f"{name}: matches reference")
+PY
 ```
 
-For a faster test run that only builds the KDE and samples each experiment:
+Compare the PDF figure content with the supplied reference; creation metadata
+can differ between regenerated PDF files.
+
+## Optional: regenerate from saved comparison CSVs
 
 ```bash
-python /work/liac/tatzber/green_vs_docking/plot_outputs_allexp.py \
-  --root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
-  --prefer-blocks-file \
-  --joint-kde-only \
-  --joint-kde-sample 5000 \
-  --joint-kde-output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/green_vs_docking_joint_kde_test.png
+python main.py run --from-comparisons 9KQ3_outputs
 ```
 
-Useful flags:
-- `--aggregate-by-seed`: average each seed first, then compute mean/std across seeds.
-- `--prefer-blocks-file`: for folders whose name contains `blocks`, use `green_vs_quickvina_blocks.csv` instead of `green_vs_quickvina.csv`; the default plot filename gets `_blocks` appended if `--output` is not explicitly set. In this mode, `resume.csv` is recomputed from the same selected comparison rows as the plot, so its statistics are molecule-pooled by default and match the LaTeX table definition.
-- `--joint-kde-output`: write an additional joint KDE plot that overlays all experiment molecule clouds on one figure using the Plasma palette.
-- `--joint-kde-only`: skip the average scatter plot and `resume.csv`, and only create the joint KDE plot.
-- `--joint-kde-sample`: randomly sample up to `N` molecules per experiment label before KDE estimation; useful for quick tests and large output folders.
-- `--joint-kde-docking-min` / `--joint-kde-docking-max`: control the docking range shown on the joint KDE x-axis. Defaults are `-14` and `0`.
+This regenerates the same three final artifacts in `outputs/9KQ3/`, skipping
+route rescoring and per-condition KDE rendering. **NameRxn is unnecessary.**
+The downloaded oracle histories are still required for the LaTeX-table summary.
+The reference inputs remain unchanged with the default destinations.
 
-Default inputs used by this script:
-- root: `/work/liac/tatzber/green_vs_docking/outputs/outputs_bae`
-- per-experiment comparison file: `green_vs_quickvina.csv`
-- per-experiment summaries: `summary_scores.csv` and optional `summary_scores_blocks_only.csv`
+## Reproducibility limits and implementation notes
 
-Outputs:
-- summary scatter plot with docking axis inverted.
-- optional joint KDE plot with docking axis inverted and all experiments overlaid on one figure.
-- `resume.csv` containing experiment-average metrics from all discovered summary files.
-
-Notes:
-- The joint KDE uses molecule-level rows, not the per-experiment averages used by the summary scatter plot.
-- With `--prefer-blocks-file`, folders whose name contains `blocks` use `green_vs_quickvina_blocks.csv` for both the summary plot/resume recomputation and the joint KDE.
-- The joint KDE requires `seaborn` in the active environment; the rest of the script does not.
-
-## Build LaTeX-Table Summary CSV
-
-Use this for the 9KQ3 table where molecules are split by experiment and annotated with docking-score, QED, green score, and BMS for solved/enforced molecules.
-
-```bash
-python /work/liac/tatzber/green_vs_docking/build_latex_table_summary.py \
-  --outputs-root /work/liac/tatzber/green_vs_docking/outputs/9KQ3 \
-  --oracle-root /work/liac/vsabanzagil/condition_optimization \
-  --output /work/liac/tatzber/green_vs_docking/outputs/9KQ3/latex_table_summary.csv \
-  --baseline-experiment pesticide_9KQ3_basic \
-  --seeds 0 1 2 3 4
-```
-
-The script discovers experiment output folders under `--outputs-root` that contain `green_vs_quickvina.csv`. It matches them to original oracle folders under `--oracle-root` by folder name. Baseline rows are read from the first output folder containing a baseline label, while baseline oracle histories come from `--baseline-experiment`.
-
-Solved definitions for the table:
-- all experiments: `syntheseus_reward != 0`
-- names containing `blocks`: additionally require `uses_block == True` in `green_vs_quickvina.csv`
-- names containing `no_deprotection`: additionally require `has_protection == False` in `green_vs_quickvina.csv`
-- if both substrings are present, all conditions must hold
-
-Missing `oracle_history.csv` files are skipped for that experiment. The output records `expected_replicates`, `available_replicates`, `available_seeds`, and `successful_replicates_N` so the table can report exactly which seeds contributed.
-
-Output columns include solved/non-solved mean and standard deviation, pooled solved molecules, docking mean/std, QED mean/std, green-score mean/std, and unique BMS count recomputed from SMILES with RDKit Bemis-Murcko scaffolds.
-
-A Slurm wrapper example is available in `submit_latex_table_summary.sh`.
+- **Missing histories:** interrupted SATURN runs left no `oracle_history.csv`
+  for `pesticide_9KQ3_blocks/seed3` and
+  `pesticide_9KQ3_blocks_no_deprotection/seed4`. These histories cannot be recovered.
+  Seeds lacking required inputs are skipped; the table records
+  `expected_replicates`, `available_replicates`, `available_seeds`, and
+  `successful_replicates_N`.
+- **Green score:** the equal-weight average of atom economy, solvent score,
+  temperature score, and biomass utilization uses the supplied block list and
+  solvent guide. Missing components are omitted and remaining weights renormalized.
+- **Manuscript statistics:** the plot and `resume.csv` pool molecule rows across
+  seeds, report sample standard deviations, and select
+  `green_vs_quickvina_blocks.csv` for block conditions. The table reports
+  solved/non-solved counts across seeds and molecular metrics over the pooled
+  solved set. Solved molecules require nonzero `syntheseus_reward` and an available
+  green score; block conditions additionally require block use, and
+  `no_deprotection` conditions require no protection/deprotection flag.
+- **Alternative statistics:** `--aggregate-by-seed` averages seed means for the
+  plot and resume; `--no-prefer-blocks-file` selects unfiltered comparisons.
+  `--resume-from-summaries` exports historical summary-file averages to the resume
+  while retaining pooled plot statistics, and cannot be combined with
+  `--aggregate-by-seed`. These options do not change the table's definitions.
+- **Architecture:** `main.py` dispatches the `run`, `score`, `plot`, and `table`
+  commands. `src/green_vs_docking/analysis/` computes metrics and tables,
+  `plots/` renders figures, and `cli/` provides command-line interfaces.
+  See `python main.py <command> --help` for stage options, including optional
+  joint KDE plots. `pyproject.toml` configures packaging and the public test suite;
+  running `main.py` does not require installing the package.

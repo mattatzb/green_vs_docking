@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "green-vs-docking"
+version = "0.1.0"
+description = "Green chemistry scoring and manuscript analysis for saved retrosynthetic routes"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy==1.26.4", "pandas==2.1.4", "scipy==1.13.1", "rdkit==2025.3.5",
+    "matplotlib==3.9.2", "pillow==11.1.0", "seaborn==0.13.2",
+]
+
+[project.scripts]
+green-vs-docking = "green_vs_docking.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

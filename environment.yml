@@ -1,11 +1,19 @@
+# Analysis versions aligned with the syntheseus_benchmark environment.
+# The shared benchmark environment additionally needs seaborn==0.13.2.
 name: green-vs-docking
 channels:
+  - defaults
   - conda-forge
 dependencies:
-  - python=3.10
-  - pandas
-  - numpy
-  - matplotlib-base
-  - seaborn
-  - rdkit
-  - pip
+  - python=3.9.7
+  - pip=25.0
+  - numpy=1.26.4
+  - pandas=2.1.4
+  - scipy=1.13.1
+  - pip:
+      - rdkit==2025.3.5
+      - matplotlib==3.9.2
+      - pillow==11.1.0
+      - seaborn==0.13.2
+      - pytest==8.4.1
+      - exceptiongroup==1.2.2

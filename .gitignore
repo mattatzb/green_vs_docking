@@ -1,9 +1,28 @@
+# Python and test caches
 __pycache__/
 *.pyc
-slurm-*.out
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local editor settings
+.vscode/
+
+# Generated outputs and figures
 outputs/
 outputs_old_ae/
 *.png
+
+# Local submission scripts and job logs
 submit*.sh
-!submit_latex_table_summary.sh
-!submit.sh
+slurm-*.out
+
+# Local manuscript reproduction checks and notes
+local_tests/
+REFACTOR_REPORT.md
+
+# Raw experiment data distributed through Zenodo
+data/pesticide_*
