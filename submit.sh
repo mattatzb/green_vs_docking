@@ -9,13 +9,13 @@
 
 source /work/liac/tatzber/miniconda3/bin/activate tgp
 
-BASELINE="/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_basic"
+BASELINE="data/pesticide_9KQ3_basic"
 CONDITIONS=(
-    "/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_blocks_no_deprotection"
-    "/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_solvent"
-    "/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_solvent_blocks"
-    "/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_solvent_blocks_no_deprotection"
-    "/work/liac/vsabanzagil/condition_optimization/experiment_copy_mateo/pesticide_9KQ3_solvent_no_deprotection"
+    "data/pesticide_9KQ3_blocks_no_deprotection"
+    "data/pesticide_9KQ3_solvent"
+    "data/pesticide_9KQ3_solvent_blocks"
+    "data/pesticide_9KQ3_solvent_blocks_no_deprotection"
+    "data/pesticide_9KQ3_solvent_no_deprotection"
 )
 
 for condition in "${CONDITIONS[@]}"; do
