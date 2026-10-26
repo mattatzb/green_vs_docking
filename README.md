@@ -20,15 +20,21 @@ NameRxn is a separate dependency for route rescoring (step 3).
 
 ## 2. Download the archived inputs
 
-Download **`green_vs_docking_data.zip`** from
-**[Zenodo: 10.5281/zenodo.23673270](https://doi.org/10.5281/zenodo.23673270)**
-and extract it into the repository root:
+Download the required ZIPs from
+**[Zenodo: 10.5281/zenodo.23674897](https://doi.org/10.5281/zenodo.23674897)**
+(publication pending) and extract them into the repository root:
+
+| Archive | Extracted directories | Purpose |
+| --- | --- | --- |
+| `green_vs_docking_data.zip` | `data/pesticide_9KQ3_*/` | Saved routes and oracle histories for full rescoring and table generation |
+| `green_vs_docking_outputs.zip` | `9KQ3_outputs/pesticide_9KQ3_*/` | Saved per-condition scores, comparisons, summaries, and KDEs for the optional saved-comparison workflow |
 
 ```bash
 unzip ~/Downloads/green_vs_docking_data.zip -d .
+unzip ~/Downloads/green_vs_docking_outputs.zip -d .
 ```
 
-The archive contains eight `data/pesticide_9KQ3_*` experiment directories,
+The data archive contains eight `data/pesticide_9KQ3_*` experiment directories,
 including the `pesticide_9KQ3_basic` baseline. Seed inputs follow this layout:
 
 ```text
@@ -37,9 +43,13 @@ data/pesticide_9KQ3_*/seed0/      # likewise seed1 through seed4
   syntheseus_results/smiles_rxn_tracker.json
 ```
 
-`data/blocks.smi`, `data/solvent_guide.json`, and the reference results in
-`9KQ3_outputs/` are supplied in this repository, separately from the ZIP.
-The two known missing oracle histories are described below.
+`data/blocks.smi`, `data/solvent_guide.json`, and only the three manuscript targets
+(`latex_table_summary.csv`, `resume.csv`, and `green_vs_docking_summary_blocks.pdf`)
+directly under `9KQ3_outputs/` remain in this repository. The output archive
+contains that folder's seven experiment subdirectories. The two root PNGs are
+excluded from both Git and the archive. Full rescoring needs only the data archive;
+the saved-comparison workflow needs both archives. The two known missing oracle
+histories are described below.
 
 ## 3. Configure NameRxn for route rescoring
 
@@ -87,7 +97,7 @@ Run the small unit and regression tests:
 python -B -m pytest
 ```
 
-These use synthetic fixtures and require neither the Zenodo download nor
+These use synthetic fixtures and require neither the Zenodo downloads nor
 NameRxn. They check scoring, statistics options, paths, and pipeline orchestration;
 they do not rerun the full manuscript dataset.
 
@@ -117,8 +127,9 @@ can differ between regenerated PDF files.
 python main.py run --from-comparisons 9KQ3_outputs
 ```
 
-This regenerates the same three final artifacts in `outputs/9KQ3/`, skipping
-route rescoring and per-condition KDE rendering. **NameRxn is unnecessary.**
+With both ZIPs extracted, this regenerates the same three final artifacts in
+`outputs/9KQ3/`, skipping route rescoring and per-condition KDE rendering.
+**NameRxn is unnecessary.**
 The downloaded oracle histories are still required for the LaTeX-table summary.
 The reference inputs remain unchanged with the default destinations.
 

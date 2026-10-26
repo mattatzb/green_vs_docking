@@ -24,5 +24,11 @@ slurm-*.out
 local_tests/
 REFACTOR_REPORT.md
 
-# Raw experiment data distributed through Zenodo
+# Archived experiment data and per-condition outputs distributed through Zenodo
 data/pesticide_*
+9KQ3_outputs/*
+
+# Keep only the three manuscript reference artifacts in Git
+!9KQ3_outputs/green_vs_docking_summary_blocks.pdf
+!9KQ3_outputs/latex_table_summary.csv
+!9KQ3_outputs/resume.csv
